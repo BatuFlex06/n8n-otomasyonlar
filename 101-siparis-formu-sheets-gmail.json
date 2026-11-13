@@ -1,0 +1,334 @@
+{
+  "name": "İlk otomasyon: Sipariş formu → Google Sheets → Gmail",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Sipariş formu",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        240
+      ],
+      "webhookId": "7c2e9a41-3d5b-4f8e-a1c6-101101101101",
+      "parameters": {
+        "formTitle": "Pasta siparişi",
+        "formDescription": "Siparişini bırak, aynı gün dönüş yapalım.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Ad Soyad",
+              "placeholder": "Ayşe Yılmaz",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "E-posta",
+              "fieldType": "email",
+              "placeholder": "ayse@ornek.com",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Telefon",
+              "placeholder": "05xx xxx xx xx",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Ürün",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Doğum günü pastası"
+                  },
+                  {
+                    "option": "Kurabiye kutusu"
+                  },
+                  {
+                    "option": "Özel tasarım pasta"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Teslim tarihi",
+              "fieldType": "date",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Not",
+              "fieldType": "textarea",
+              "requiredField": false
+            }
+          ]
+        },
+        "responseMode": "onReceived",
+        "options": {
+          "respondWithOptions": {
+            "values": {
+              "formSubmittedText": "Teşekkürler! Siparişini aldık, bugün sana dönüş yapacağız."
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Veriyi düzenle",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        260,
+        240
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "Ad",
+              "value": "={{ $json['Ad Soyad'].trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "E-posta",
+              "value": "={{ $json['E-posta'].trim().toLowerCase() }}",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "Telefon",
+              "value": "={{ $json.Telefon.replace(/\\s/g, '') }}",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "Ürün",
+              "value": "={{ $json['Ürün'] }}",
+              "type": "string"
+            },
+            {
+              "id": "a5",
+              "name": "Teslim",
+              "value": "={{ $json['Teslim tarihi'] }}",
+              "type": "string"
+            },
+            {
+              "id": "a6",
+              "name": "Kalan gün",
+              "value": "={{ Math.ceil(DateTime.fromISO($json['Teslim tarihi']).diff($now.startOf('day'), 'days').days) }}",
+              "type": "number"
+            },
+            {
+              "id": "a7",
+              "name": "Not",
+              "value": "={{ $json.Not || '-' }}",
+              "type": "string"
+            },
+            {
+              "id": "a8",
+              "name": "Kayıt",
+              "value": "={{ $now.toFormat('dd.MM.yyyy HH:mm') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Google Sheets'e kaydet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        520,
+        240
+      ],
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "url",
+          "value": "https://docs.google.com/spreadsheets/d/TABLO_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Siparişler"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "n4",
+      "name": "Acil mi?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        780,
+        240
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Veriyi düzenle').item.json['Kalan gün'] }}",
+              "rightValue": 2,
+              "operator": {
+                "type": "number",
+                "operation": "lte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "n5",
+      "name": "Acil sipariş e-postası",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1040,
+        140
+      ],
+      "parameters": {
+        "sendTo": "sen@isletmen.com",
+        "subject": "=ACİL sipariş: {{ $('Veriyi düzenle').item.json['Ürün'] }} - {{ $('Veriyi düzenle').item.json.Teslim }}",
+        "emailType": "text",
+        "message": "=Teslimata {{ $('Veriyi düzenle').item.json['Kalan gün'] }} gün var.\n\nMüşteri: {{ $('Veriyi düzenle').item.json.Ad }}\nTelefon: {{ $('Veriyi düzenle').item.json.Telefon }}\nE-posta: {{ $('Veriyi düzenle').item.json['E-posta'] }}\nÜrün: {{ $('Veriyi düzenle').item.json['Ürün'] }}\nNot: {{ $('Veriyi düzenle').item.json.Not }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "id": "n6",
+      "name": "Sipariş e-postası",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1040,
+        340
+      ],
+      "parameters": {
+        "sendTo": "sen@isletmen.com",
+        "subject": "=Yeni sipariş: {{ $('Veriyi düzenle').item.json['Ürün'] }} - {{ $('Veriyi düzenle').item.json.Teslim }}",
+        "emailType": "text",
+        "message": "=Müşteri: {{ $('Veriyi düzenle').item.json.Ad }}\nTelefon: {{ $('Veriyi düzenle').item.json.Telefon }}\nÜrün: {{ $('Veriyi düzenle').item.json['Ürün'] }}\nTeslim: {{ $('Veriyi düzenle').item.json.Teslim }}\nNot: {{ $('Veriyi düzenle').item.json.Not }}\n\nSiparişler tablosuna kaydedildi: {{ $('Veriyi düzenle').item.json.Kayıt }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "id": "n7",
+      "name": "Not",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        60
+      ],
+      "parameters": {
+        "content": "## İlk otomasyonun\nForm → veriyi düzenle → Google Sheets → acil mi? → sana e-posta.\nÖnce **Test URL** ile dene, sonra **Active** anahtarını aç: gerçek müşteriler **Production URL** kullanır.",
+        "height": 130,
+        "width": 1260,
+        "color": 5
+      }
+    }
+  ],
+  "connections": {
+    "Sipariş formu": {
+      "main": [
+        [
+          {
+            "node": "Veriyi düzenle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Veriyi düzenle": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets'e kaydet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets'e kaydet": {
+      "main": [
+        [
+          {
+            "node": "Acil mi?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acil mi?": {
+      "main": [
+        [
+          {
+            "node": "Acil sipariş e-postası",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sipariş e-postası",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

@@ -1,0 +1,429 @@
+{
+  "name": "Yapay zeka ile e-posta ayırma ve cevap taslağı",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "Yeni e-posta",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": true,
+        "filters": {
+          "labelIds": [
+            "INBOX"
+          ],
+          "readStatus": "unread"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "id": "n2",
+      "name": "E-postayı sınıflandır",
+      "type": "@n8n/n8n-nodes-langchain.textClassifier",
+      "typeVersion": 1.1,
+      "position": [
+        280,
+        300
+      ],
+      "parameters": {
+        "inputText": "=Gönderen: {{ $json.From }}\nKonu: {{ $json.Subject }}\n\n{{ $json.snippet }}",
+        "categories": {
+          "categories": [
+            {
+              "category": "Sipariş sorusu",
+              "description": "Mevcut bir siparişin kargosu, değişikliği, iadesi ya da ürün hakkında bir müşteri sorusu."
+            },
+            {
+              "category": "Teklif talebi",
+              "description": "Fiyat soran, toplu sipariş, kurumsal hediye ya da özel tasarım isteyen e-posta."
+            },
+            {
+              "category": "Fatura / ödeme",
+              "description": "Fatura, dekont, ödeme bildirimi, banka ya da muhasebe e-postası."
+            },
+            {
+              "category": "Reklam / bülten",
+              "description": "Bülten, kampanya, satış teklifi yapan firma e-postası, otomatik tanıtım."
+            }
+          ]
+        },
+        "options": {
+          "fallback": "other"
+        }
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Yapay zeka modeli",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        300,
+        520
+      ],
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "credentials": {
+        "openAiApi": {
+          "id": "",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "id": "n4",
+      "name": "Teklif bilgilerini düzenle",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        640,
+        300
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "Tarih",
+              "value": "={{ $now.toFormat('dd.MM.yyyy HH:mm') }}",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "Gönderen",
+              "value": "={{ $('Yeni e-posta').item.json.From }}",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "Konu",
+              "value": "={{ $('Yeni e-posta').item.json.Subject }}",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "Özet",
+              "value": "={{ $('Yeni e-posta').item.json.snippet }}",
+              "type": "string"
+            },
+            {
+              "id": "a5",
+              "name": "Durum",
+              "value": "Cevap bekliyor",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n5",
+      "name": "Teklif tablosuna ekle",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "url",
+          "value": "https://docs.google.com/spreadsheets/d/TABLO_ID/edit"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Teklifler"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "n6",
+      "name": "Cevap taslağı yaz",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        1120,
+        100
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "=Sen küçük bir seramik atölyesinin e-postalarına cevap taslağı yazıyorsun.\n\nAtölye bilgileri:\n- Çalışma saatleri: hafta içi 10:00-18:00\n- Kargo: siparişler 3 iş günü içinde kargoya verilir\n- İade: teslimden sonra 14 gün içinde\n- Toplu sipariş ve özel tasarım için fiyatı atölye sahibi verir\n\nKurallar:\n- Kısa, kibar, sade Türkçe yaz\n- Sadece yukarıdaki bilgilere dayan, bilmediğin şeyi uydurma\n- Emin olmadığın yere [DOLDUR: ...] yaz\n- Fiyat, indirim ya da tarih sözü verme\n\nGelen e-posta ({{ $('Yeni e-posta').item.json.From }}):\nKonu: {{ $('Yeni e-posta').item.json.Subject }}\n{{ $('Yeni e-posta').item.json.snippet }}"
+      }
+    },
+    {
+      "id": "n7",
+      "name": "Yapay zeka modeli (taslak)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        1140,
+        320
+      ],
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {
+          "temperature": 0.4
+        }
+      },
+      "credentials": {
+        "openAiApi": {
+          "id": "",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "id": "n8",
+      "name": "Gmail taslağı kaydet",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1460,
+        100
+      ],
+      "parameters": {
+        "resource": "draft",
+        "subject": "=Re: {{ $('Yeni e-posta').item.json.Subject }}",
+        "message": "={{ $json.text }}",
+        "options": {
+          "threadId": "={{ $('Yeni e-posta').item.json.threadId }}",
+          "sendTo": "={{ $('Yeni e-posta').item.json.From }}"
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "id": "n9",
+      "name": "Etiket: Muhasebe",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        640,
+        560
+      ],
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $('Yeni e-posta').item.json.id }}",
+        "labelIds": [
+          "Muhasebe"
+        ]
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "id": "n10",
+      "name": "Okundu işaretle",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        640,
+        760
+      ],
+      "parameters": {
+        "operation": "markAsRead",
+        "messageId": "={{ $('Yeni e-posta').item.json.id }}"
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "id": "n11",
+      "name": "Diğer: gelen kutusunda kalsın",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        640,
+        960
+      ],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Yeni e-posta": {
+      "main": [
+        [
+          {
+            "node": "E-postayı sınıflandır",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Yapay zeka modeli": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "E-postayı sınıflandır",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Yapay zeka modeli (taslak)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Cevap taslağı yaz",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "E-postayı sınıflandır": {
+      "main": [
+        [
+          {
+            "node": "Cevap taslağı yaz",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Teklif bilgilerini düzenle",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Etiket: Muhasebe",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Okundu işaretle",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Diğer: gelen kutusunda kalsın",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Teklif bilgilerini düzenle": {
+      "main": [
+        [
+          {
+            "node": "Teklif tablosuna ekle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Teklif tablosuna ekle": {
+      "main": [
+        [
+          {
+            "node": "Cevap taslağı yaz",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cevap taslağı yaz": {
+      "main": [
+        [
+          {
+            "node": "Gmail taslağı kaydet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {
+    "Yeni e-posta": [
+      {
+        "json": {
+          "id": "ornek-0001",
+          "threadId": "ornek-0001",
+          "From": "Elif Demir <elif@ornek.com>",
+          "Subject": "Kupa siparişim ne zaman kargoda?",
+          "snippet": "Merhaba, geçen salı iki kupa sipariş ettim. Kargoya verildi mi, takip numarası alabilir miyim? Teşekkürler, Elif",
+          "labelIds": [
+            "INBOX",
+            "UNREAD"
+          ]
+        }
+      }
+    ],
+    "Cevap taslağı yaz": [
+      {
+        "json": {
+          "text": "Merhaba Elif Hanım,\n\nMesajınız için teşekkürler. Siparişler 3 iş günü içinde kargoya verilir. Kargo takip numaranız: [DOLDUR: takip numarası]\n\nİyi günler dileriz,\nSeramik Atölyesi"
+        }
+      }
+    ]
+  }
+}
